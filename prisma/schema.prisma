@@ -1,0 +1,227 @@
+// This is your Prisma schema file
+// Wall & Flooring Business Management System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  ENGINEER
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  OTP_SENT
+  VERIFIED
+  COMPLETED
+  CANCELLED
+}
+
+enum TransactionType {
+  STOCK_IN
+  STOCK_OUT
+}
+
+enum VisitStatus {
+  PENDING
+  OTP_VERIFIED
+  COMPLETED
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  mobileNumber  String    @unique @map("phone")
+  role          UserRole
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  // Relations
+  appointmentsAsEngineer  Appointment[]
+  inventoryTransactions   InventoryTransaction[]
+  workerVisits            WorkerVisit[]
+
+  @@index([email])
+  @@index([mobileNumber])
+  @@map("users")
+}
+
+model ClientType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  // Relations
+  clients   Client[]
+
+  @@map("client_types")
+}
+
+model Client {
+  id                    String      @id @default(cuid())
+  name                  String
+  address               String?
+  primaryContact        String
+  secondaryContact      String?
+  clientTypeId          String?
+  isActive              Boolean     @default(true)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  deletedAt             DateTime?
+
+  // Relations
+  clientType            ClientType? @relation(fields: [clientTypeId], references: [id])
+  appointments          Appointment[]
+  inventoryTransactions InventoryTransaction[]
+  workerVisits          WorkerVisit[]
+
+  @@index([name])
+  @@index([primaryContact])
+  @@map("clients")
+}
+
+model Material {
+  id           String    @id @default(cuid())
+  name         String
+  unit         String    @default("Bucket")
+  reorderLevel Int?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  // Relations
+  inventoryTransactions InventoryTransaction[]
+
+  @@index([name])
+  @@map("materials")
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  engineerId      String
+  clientId        String
+  visitDate       DateTime          @map("appointmentDate")
+  purpose         String?
+  siteAddress     String?
+  googleMapsLink  String?
+  otpMobileNumber String?
+  status          AppointmentStatus @default(SCHEDULED)
+  otp             String?
+  otpExpiresAt    DateTime?
+  otpSentAt       DateTime?
+  otpAttempts     Int               @default(0)
+  verifiedAt      DateTime?
+  feedback        String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  engineer        User              @relation(fields: [engineerId], references: [id])
+  client          Client            @relation(fields: [clientId], references: [id])
+  inventoryTransactions InventoryTransaction[]
+
+  @@index([engineerId])
+  @@index([clientId])
+  @@index([visitDate])
+  @@index([status])
+  @@map("appointments")
+}
+
+model InventoryTransaction {
+  id              String          @id @default(cuid())
+  materialId      String
+  transactionType TransactionType
+  quantity        Int
+  siteAddress     String?
+  clientId        String?
+  appointmentId   String?
+  remarks         String?
+  createdBy       String          @map("entryBy")
+  transactionDate DateTime
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  material        Material        @relation(fields: [materialId], references: [id])
+  client          Client?         @relation(fields: [clientId], references: [id])
+  appointment     Appointment?    @relation(fields: [appointmentId], references: [id])
+  createdByUser   User            @relation(fields: [createdBy], references: [id])
+
+  @@index([materialId])
+  @@index([clientId])
+  @@index([appointmentId])
+  @@index([transactionDate])
+  @@index([transactionType])
+  @@map("inventory_transactions")
+}
+
+model WorkerVisit {
+  id            String      @id @default(cuid())
+  engineerId    String
+  clientId      String
+  visitDate     DateTime
+  siteAddress   String?
+  otp           String?
+  otpSentAt     DateTime?
+  otpExpiresAt  DateTime?
+  status        VisitStatus @default(PENDING)
+  verifiedAt    DateTime?
+  workerCount   Int?
+  remarks       String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  engineer      User        @relation(fields: [engineerId], references: [id])
+  client        Client      @relation(fields: [clientId], references: [id])
+
+  @@index([engineerId])
+  @@index([clientId])
+  @@index([visitDate])
+  @@index([status])
+  @@map("worker_visits")
+}
+
+model Settings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model SMSLog {
+  id          String   @id @default(cuid())
+  phone       String
+  message     String
+  status      String
+  provider    String?
+  providerId  String?
+  error       String?
+  sentAt      DateTime @default(now())
+
+  @@index([phone])
+  @@index([status])
+  @@index([sentAt])
+  @@map("sms_logs")
+}
