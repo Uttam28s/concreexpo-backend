@@ -8,6 +8,9 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 
 const app: Application = express();
 
+// Trust proxy - required when behind a reverse proxy (e.g., Vercel, Railway)
+app.set('trust proxy', true);
+
 // Middleware
 app.use(cors({
   origin: config.frontendUrl,
