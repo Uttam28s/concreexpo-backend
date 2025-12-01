@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { hashPassword, comparePassword, validatePasswordStrength } from '../utils/password';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
@@ -17,9 +18,31 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    let user;
+    try {
+      user = await prisma.user.findUnique({
+        where: { email },
+      });
+    } catch (dbError: any) {
+      console.error('[DB ERROR] Failed to find user by email:', {
+        email,
+        error: {
+          name: dbError?.name,
+          code: dbError?.code,
+          message: dbError?.message,
+          meta: dbError?.meta,
+        },
+        timestamp: new Date().toISOString(),
+      });
+      
+      // Re-throw Prisma errors to be handled by error middleware
+      if (dbError instanceof Prisma.PrismaClientKnownRequestError) {
+        throw dbError;
+      }
+      
+      // For unknown database errors, throw generic error
+      throw new Error('Database query failed');
+    }
 
     if (!user) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -75,8 +98,42 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       accessToken,
       refreshToken,
     });
-  } catch (error) {
-    console.error('Login error:', error);
+  } catch (error: any) {
+    // Enhanced error logging for login
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      console.error('[DB ERROR] Login failed - Prisma error:', {
+        code: error.code,
+        message: error.message,
+        meta: error.meta,
+        timestamp: new Date().toISOString(),
+      });
+      
+      // Handle specific Prisma error codes
+      if (error.code === 'P1001' || error.code === 'P1002' || error.code === 'P1008') {
+        // Connection errors
+        res.status(503).json({ 
+          error: 'Database connection error',
+          message: 'Service temporarily unavailable' 
+        });
+        return;
+      }
+      
+      if (error.code === 'P2000' || error.code === 'P2001' || error.code === 'P2011') {
+        // Query execution errors
+        res.status(500).json({ 
+          error: 'Database query failed',
+          message: 'An error occurred while processing your request' 
+        });
+        return;
+      }
+    } else {
+      console.error('[ERROR] Login failed:', {
+        error: error?.message || error,
+        stack: error?.stack,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    
     res.status(500).json({ error: 'Login failed' });
   }
 };

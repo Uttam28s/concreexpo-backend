@@ -21,14 +21,29 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Root health check (for Railway/load balancer health checks)
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok', message: 'Concreexpo API is running' });
+});
+
+// Health check endpoint (not rate limited)
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', message: 'Concreexpo API is running' });
+});
+
 // Rate limiting
 // Configure to work properly behind Railway's proxy
+// Skip rate limiting for health checks
 const limiter = rateLimit({
   windowMs: config.rateLimit.window,
   max: config.rateLimit.max,
   message: 'Too many requests, please try again later',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/';
+  },
 });
 app.use('/api/', limiter);
 
@@ -40,7 +55,8 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-app.listen(config.port, () => {
+// Bind to 0.0.0.0 to accept connections from Railway's network
+app.listen(config.port, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${config.port}`);
   console.log(`📝 Environment: ${config.nodeEnv}`);
   console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
