@@ -54,12 +54,19 @@ app.use('/api', routes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server
-// Bind to 0.0.0.0 to accept connections from Railway's network
-app.listen(config.port, '0.0.0.0', () => {
-  console.log(`🚀 Server is running on port ${config.port}`);
-  console.log(`📝 Environment: ${config.nodeEnv}`);
-  console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
-});
+// Only start the server if not in serverless environment (Vercel)
+// Vercel will handle the serverless function execution
+if (process.env.VERCEL !== '1') {
+  // Start server for local development or standalone deployments (Railway, etc.)
+  // Bind to 0.0.0.0 to accept connections from any network interface
+  app.listen(config.port, '0.0.0.0', () => {
+    console.log(`🚀 Server is running on port ${config.port}`);
+    console.log(`📝 Environment: ${config.nodeEnv}`);
+    console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
+  });
+} else {
+  // Running on Vercel serverless platform
+  console.log('🚀 Running on Vercel serverless platform');
+}
 
 export default app;

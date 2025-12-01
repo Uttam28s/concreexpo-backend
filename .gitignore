@@ -10,3 +10,6 @@ coverage
 *.swo
 *~
 /src/generated/prisma
+
+.vercel
+.env*.local
