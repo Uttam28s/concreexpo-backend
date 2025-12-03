@@ -8,6 +8,7 @@ import {
   getUsageReport,
   getBySiteReport,
   getBalanceReport,
+  exportInventory,
 } from '../controllers/inventory.controller';
 import { authenticate, adminOnly } from '../middleware/auth.middleware';
 
@@ -29,5 +30,6 @@ router.get('/dashboard/stats', getDashboardStats);
 router.get('/reports/usage', adminOnly, getUsageReport);
 router.get('/reports/by-site', adminOnly, getBySiteReport);
 router.get('/reports/balance', adminOnly, getBalanceReport);
+router.get('/export', adminOnly, exportInventory);
 
 export default router;

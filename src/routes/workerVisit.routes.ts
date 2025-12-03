@@ -11,6 +11,7 @@ import {
   getEngineerSummary,
   getSiteWiseSummary,
   getDateWiseAnalysis,
+  exportWorkerVisits,
 } from '../controllers/workerVisit.controller';
 import { authenticate, adminOnly, engineerOnly } from '../middleware/auth.middleware';
 
@@ -35,5 +36,6 @@ router.get('/all', adminOnly, getAllVisits);
 router.get('/reports/engineer-summary', adminOnly, getEngineerSummary);
 router.get('/reports/site-wise', adminOnly, getSiteWiseSummary);
 router.get('/reports/date-wise', adminOnly, getDateWiseAnalysis);
+router.get('/export', adminOnly, exportWorkerVisits);
 
 export default router;

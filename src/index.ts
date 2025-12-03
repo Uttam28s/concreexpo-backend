@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config/env';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { testDatabaseConnection } from './config/database';
 
 const app: Application = express();
 
@@ -57,16 +58,37 @@ app.use(errorHandler);
 // Only start the server if not in serverless environment (Vercel)
 // Vercel will handle the serverless function execution
 if (process.env.VERCEL !== '1') {
-  // Start server for local development or standalone deployments (Railway, etc.)
-  // Bind to 0.0.0.0 to accept connections from any network interface
-  app.listen(config.port, '0.0.0.0', () => {
-    console.log(`🚀 Server is running on port ${config.port}`);
-    console.log(`📝 Environment: ${config.nodeEnv}`);
-    console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
-  });
+  // Test database connection before starting server
+  testDatabaseConnection()
+    .then((connected) => {
+      if (!connected) {
+        console.warn('[WARNING] Server starting despite database connection failure');
+      }
+      
+      // Start server for local development or standalone deployments (Railway, etc.)
+      // Bind to 0.0.0.0 to accept connections from any network interface
+      app.listen(config.port, '0.0.0.0', () => {
+        console.log(`🚀 Server is running on port ${config.port}`);
+        console.log(`📝 Environment: ${config.nodeEnv}`);
+        console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
+      });
+    })
+    .catch((error) => {
+      console.error('[ERROR] Failed to test database connection:', error);
+      // Still start server, but log the error
+      app.listen(config.port, '0.0.0.0', () => {
+        console.log(`🚀 Server is running on port ${config.port} (with database connection issues)`);
+        console.log(`📝 Environment: ${config.nodeEnv}`);
+        console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
+      });
+    });
 } else {
   // Running on Vercel serverless platform
+  // Test connection asynchronously (won't block function execution)
   console.log('🚀 Running on Vercel serverless platform');
+  testDatabaseConnection().catch((error) => {
+    console.error('[ERROR] Database connection test failed:', error);
+  });
 }
 
 export default app;

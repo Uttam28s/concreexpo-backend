@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
+import ExcelJS from 'exceljs';
+import { format } from 'date-fns';
 
 /**
  * Stock In - Record material received
@@ -599,5 +601,122 @@ export const getBalanceReport = async (_req: Request, res: Response): Promise<vo
   } catch (error) {
     console.error('Get balance report error:', error);
     res.status(500).json({ error: 'Failed to generate balance report' });
+  }
+};
+
+/**
+ * Export inventory transactions to Excel
+ */
+export const exportInventory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const where: any = {};
+
+    if (startDate || endDate) {
+      where.transactionDate = {};
+      if (startDate) {
+        where.transactionDate.gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        where.transactionDate.lte = new Date(endDate as string);
+      }
+    }
+
+    const transactions = await prisma.inventoryTransaction.findMany({
+      where,
+      include: {
+        material: {
+          select: {
+            name: true,
+            unit: true,
+          },
+        },
+        client: {
+          select: {
+            name: true,
+          },
+        },
+        appointment: {
+          select: {
+            id: true,
+            visitDate: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        transactionDate: 'desc',
+      },
+    });
+
+    // Create workbook and worksheet
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Inventory Transactions');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'ID', key: 'id', width: 30 },
+      { header: 'Material', key: 'materialName', width: 25 },
+      { header: 'Type', key: 'type', width: 15 },
+      { header: 'Quantity', key: 'quantity', width: 12 },
+      { header: 'Unit', key: 'unit', width: 10 },
+      { header: 'Transaction Date', key: 'transactionDate', width: 20 },
+      { header: 'Client', key: 'clientName', width: 25 },
+      { header: 'Site Address', key: 'siteAddress', width: 40 },
+      { header: 'Appointment ID', key: 'appointmentId', width: 30 },
+      { header: 'Remarks', key: 'remarks', width: 40 },
+      { header: 'Created By', key: 'createdBy', width: 25 },
+      { header: 'Created At', key: 'createdAt', width: 20 },
+    ];
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4472C4' },
+    };
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    // Add data rows
+    transactions.forEach((transaction) => {
+      worksheet.addRow({
+        id: transaction.id,
+        materialName: transaction.material.name,
+        type: transaction.transactionType,
+        quantity: transaction.quantity,
+        unit: transaction.material.unit,
+        transactionDate: format(transaction.transactionDate, 'yyyy-MM-dd HH:mm'),
+        clientName: transaction.client?.name || '',
+        siteAddress: transaction.siteAddress || '',
+        appointmentId: transaction.appointmentId || '',
+        remarks: transaction.remarks || '',
+        createdBy: transaction.createdByUser.name,
+        createdAt: format(transaction.createdAt, 'yyyy-MM-dd HH:mm'),
+      });
+    });
+
+    // Set response headers
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=inventory_${format(new Date(), 'yyyy-MM-dd')}.xlsx`
+    );
+
+    // Write to response
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export inventory error:', error);
+    res.status(500).json({ error: 'Failed to export inventory' });
   }
 };

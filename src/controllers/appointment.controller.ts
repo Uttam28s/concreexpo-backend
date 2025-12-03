@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { generateMSG91OTPToken, verifyMSG91OTPToken } from '../utils/jwt';
 import axios from 'axios';
 import { config } from '../config/env';
+import ExcelJS from 'exceljs';
 
 /**
  * Get all appointments (Admin: all, Engineer: own only)
@@ -941,5 +942,174 @@ export const getReports = async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     console.error('Get reports error:', error);
     res.status(500).json({ error: 'Failed to generate reports' });
+  }
+};
+
+/**
+ * Get admin dashboard statistics
+ */
+export const getAdminDashboardStats = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    // Total appointments
+    const totalAppointments = await prisma.appointment.count();
+
+    // Pending verifications (appointments with OTP_SENT status)
+    const pendingVerifications = await prisma.appointment.count({
+      where: {
+        status: 'OTP_SENT',
+      },
+    });
+
+    // Total stock (from inventory)
+    const materials = await prisma.material.findMany({
+      where: { isActive: true },
+    });
+
+    let totalStock = 0;
+    for (const material of materials) {
+      const stockIn = await prisma.inventoryTransaction.aggregate({
+        where: { materialId: material.id, transactionType: 'STOCK_IN' },
+        _sum: { quantity: true },
+      });
+
+      const stockOut = await prisma.inventoryTransaction.aggregate({
+        where: { materialId: material.id, transactionType: 'STOCK_OUT' },
+        _sum: { quantity: true },
+      });
+
+      const currentStock = (stockIn._sum.quantity || 0) - (stockOut._sum.quantity || 0);
+      totalStock += currentStock;
+    }
+
+    // Active workers (from worker visits - count unique workers in verified visits)
+    // For now, we'll count total verified worker visits as active workers
+    const activeWorkers = await prisma.workerVisit.count({
+      where: {
+        status: { in: ['OTP_VERIFIED', 'COMPLETED'] },
+        visitDate: {
+          gte: new Date(new Date().setDate(new Date().getDate() - 30)), // Last 30 days
+        },
+      },
+    });
+
+    res.json({
+      totalAppointments,
+      pendingVerifications,
+      totalStock,
+      activeWorkers,
+    });
+  } catch (error) {
+    console.error('Get admin dashboard stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard statistics' });
+  }
+};
+
+/**
+ * Export appointments to Excel
+ */
+export const exportAppointments = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const where: any = {};
+
+    if (startDate || endDate) {
+      where.visitDate = {};
+      if (startDate) {
+        where.visitDate.gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        where.visitDate.lte = new Date(endDate as string);
+      }
+    }
+
+    const appointments = await prisma.appointment.findMany({
+      where,
+      include: {
+        engineer: {
+          select: {
+            name: true,
+            email: true,
+            mobileNumber: true,
+          },
+        },
+        client: {
+          select: {
+            name: true,
+            primaryContact: true,
+            address: true,
+          },
+        },
+      },
+      orderBy: {
+        visitDate: 'desc',
+      },
+    });
+
+    // Create workbook and worksheet
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Appointments');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'ID', key: 'id', width: 30 },
+      { header: 'Client Name', key: 'clientName', width: 25 },
+      { header: 'Client Contact', key: 'clientContact', width: 20 },
+      { header: 'Engineer Name', key: 'engineerName', width: 25 },
+      { header: 'Engineer Email', key: 'engineerEmail', width: 30 },
+      { header: 'Visit Date', key: 'visitDate', width: 20 },
+      { header: 'Site Address', key: 'siteAddress', width: 40 },
+      { header: 'Purpose', key: 'purpose', width: 30 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'OTP Mobile', key: 'otpMobile', width: 20 },
+      { header: 'Verified At', key: 'verifiedAt', width: 20 },
+      { header: 'Feedback', key: 'feedback', width: 40 },
+      { header: 'Created At', key: 'createdAt', width: 20 },
+    ];
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4472C4' },
+    };
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    // Add data rows
+    appointments.forEach((appointment) => {
+      worksheet.addRow({
+        id: appointment.id,
+        clientName: appointment.client.name,
+        clientContact: appointment.client.primaryContact || '',
+        engineerName: appointment.engineer.name,
+        engineerEmail: appointment.engineer.email,
+        visitDate: format(appointment.visitDate, 'yyyy-MM-dd HH:mm'),
+        siteAddress: appointment.siteAddress || '',
+        purpose: appointment.purpose || '',
+        status: appointment.status,
+        otpMobile: appointment.otpMobileNumber || '',
+        verifiedAt: appointment.verifiedAt ? format(appointment.verifiedAt, 'yyyy-MM-dd HH:mm') : '',
+        feedback: appointment.feedback || '',
+        createdAt: format(appointment.createdAt, 'yyyy-MM-dd HH:mm'),
+      });
+    });
+
+    // Set response headers
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=appointments_${format(new Date(), 'yyyy-MM-dd')}.xlsx`
+    );
+
+    // Write to response
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export appointments error:', error);
+    res.status(500).json({ error: 'Failed to export appointments' });
   }
 };

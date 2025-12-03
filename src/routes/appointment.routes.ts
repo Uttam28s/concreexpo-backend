@@ -13,6 +13,8 @@ import {
   verifyOTPWithWidget,
   submitFeedback,
   getReports,
+  getAdminDashboardStats,
+  exportAppointments,
 } from '../controllers/appointment.controller';
 import { authenticate, adminOnly, engineerOnly } from '../middleware/auth.middleware';
 
@@ -24,6 +26,8 @@ router.use(authenticate);
 // Admin routes
 router.get('/', getAppointments); // Role-based: Admin sees all, Engineer sees own
 router.get('/reports', adminOnly, getReports);
+router.get('/dashboard/stats', adminOnly, getAdminDashboardStats);
+router.get('/export', adminOnly, exportAppointments);
 router.post('/', adminOnly, createAppointment);
 router.put('/:id', adminOnly, updateAppointment);
 router.delete('/:id', adminOnly, cancelAppointment);

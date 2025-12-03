@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { generateMSG91OTPToken, verifyMSG91OTPToken } from '../utils/jwt';
 import axios from 'axios';
 import { config } from '../config/env';
+import ExcelJS from 'exceljs';
 
 /**
  * Create worker visit and send dual OTP (Admin and Engineer)
@@ -967,5 +968,115 @@ export const getDateWiseAnalysis = async (req: Request, res: Response): Promise<
   } catch (error) {
     console.error('Get date-wise analysis error:', error);
     res.status(500).json({ error: 'Failed to generate date-wise analysis' });
+  }
+};
+
+/**
+ * Export worker visits to Excel
+ */
+export const exportWorkerVisits = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const where: any = {};
+
+    if (startDate || endDate) {
+      where.visitDate = {};
+      if (startDate) {
+        where.visitDate.gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        where.visitDate.lte = new Date(endDate as string);
+      }
+    }
+
+    const visits = await prisma.workerVisit.findMany({
+      where,
+      include: {
+        engineer: {
+          select: {
+            name: true,
+            email: true,
+            mobileNumber: true,
+          },
+        },
+        client: {
+          select: {
+            name: true,
+            primaryContact: true,
+            address: true,
+          },
+        },
+      },
+      orderBy: {
+        visitDate: 'desc',
+      },
+    });
+
+    // Create workbook and worksheet
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Worker Visits');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'ID', key: 'id', width: 30 },
+      { header: 'Client Name', key: 'clientName', width: 25 },
+      { header: 'Client Contact', key: 'clientContact', width: 20 },
+      { header: 'Engineer Name', key: 'engineerName', width: 25 },
+      { header: 'Engineer Email', key: 'engineerEmail', width: 30 },
+      { header: 'Visit Date', key: 'visitDate', width: 20 },
+      { header: 'Site Address', key: 'siteAddress', width: 40 },
+      { header: 'Worker Count', key: 'workerCount', width: 15 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'OTP Sent At', key: 'otpSentAt', width: 20 },
+      { header: 'Verified At', key: 'verifiedAt', width: 20 },
+      { header: 'Remarks', key: 'remarks', width: 40 },
+      { header: 'Created At', key: 'createdAt', width: 20 },
+    ];
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4472C4' },
+    };
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    // Add data rows
+    visits.forEach((visit) => {
+      worksheet.addRow({
+        id: visit.id,
+        clientName: visit.client.name,
+        clientContact: visit.client.primaryContact || '',
+        engineerName: visit.engineer.name,
+        engineerEmail: visit.engineer.email,
+        visitDate: format(visit.visitDate, 'yyyy-MM-dd HH:mm'),
+        siteAddress: visit.siteAddress || '',
+        workerCount: visit.workerCount || 0,
+        status: visit.status,
+        otpSentAt: visit.otpSentAt ? format(visit.otpSentAt, 'yyyy-MM-dd HH:mm') : '',
+        verifiedAt: visit.verifiedAt ? format(visit.verifiedAt, 'yyyy-MM-dd HH:mm') : '',
+        remarks: visit.remarks || '',
+        createdAt: format(visit.createdAt, 'yyyy-MM-dd HH:mm'),
+      });
+    });
+
+    // Set response headers
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=worker_visits_${format(new Date(), 'yyyy-MM-dd')}.xlsx`
+    );
+
+    // Write to response
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export worker visits error:', error);
+    res.status(500).json({ error: 'Failed to export worker visits' });
   }
 };
